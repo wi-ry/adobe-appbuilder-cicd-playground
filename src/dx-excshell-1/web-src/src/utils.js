@@ -36,7 +36,7 @@ async function actionWebInvoke (actionUrl, headers = {}, params = {}, options = 
     actionUrl = new URL(actionUrl)
     Object.keys(params).forEach(key => actionUrl.searchParams.append(key, params[key]))
   } else if (fetchConfig.method === 'POST') {
-    fetchConfig.body = JSON.stringify(params)
+    fetchConfig.body = params  // Bug: should be JSON.stringify(params)
   }
 
   const response = await fetch(actionUrl, fetchConfig)
