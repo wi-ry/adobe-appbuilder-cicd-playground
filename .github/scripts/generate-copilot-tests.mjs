@@ -60,7 +60,9 @@ async function generateTestsForFile(filePath) {
     '',
     'Requirements:',
     '- Return ONLY runnable JavaScript test code.',
-    '- Use CommonJS (require/module.exports style).',
+    '- Use CommonJS (require/module.exports style) for test files.',
+    '- For requires: if the source uses "export default X", use require(...).default; if it uses "module.exports = X", use require(...) directly.',
+    '- Detect the export style from the source code and require() accordingly.',
     '- Do NOT include explanations or comments outside test code.',
     '- Mock external dependencies (fetch, DOM methods, external modules) appropriately.',
     '- Test multiple scenarios: success paths, error cases, edge cases, boundary conditions.',
@@ -118,7 +120,7 @@ async function generateTestsForFile(filePath) {
       messages: [
         {
           role: 'system',
-          content: 'You are GitHub Copilot. Produce high-quality Jest tests with thorough, deterministic assertions. Include edge cases, error handling, data validation, and format verification. Focus on catching bugs in serialization, API calls, DOM manipulation, and boundary conditions.'
+          content: 'You are GitHub Copilot. Produce high-quality Jest tests with thorough, deterministic assertions. Include edge cases, error handling, data validation, and format verification. Focus on catching bugs in serialization, API calls, DOM manipulation, and boundary conditions. When the source uses ES6 "export default", require it as require(path).default. When it uses CommonJS "module.exports", require it directly.'
         },
         {
           role: 'user',
