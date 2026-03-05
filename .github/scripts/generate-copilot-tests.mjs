@@ -29,7 +29,16 @@ function listChangedFiles() {
     .map((line) => line.trim())
     .filter(Boolean)
     .filter((file) => /\.js$/.test(file))
-    .filter((file) => /^src\/.+\/(actions\/.+|utils)\.js$/.test(file));
+    .filter((file) => {
+      // Generate tests for:
+      // - src/*/actions/... files
+      // - src/*/utils.js files
+      // - src/*/web-src/src/... files (components, utilities, entry points)
+      // - But exclude test files, e2e, and node_modules
+      const excluded = /\/(test|e2e|__tests__|node_modules)\//.test(file);
+      const matched = /^src\/.+\/(actions\/.+|utils\.js|web-src\/src\/.+)\.js$/.test(file);
+      return matched && !excluded;
+    });
 
   return [...new Set(files)];
 }
@@ -47,13 +56,47 @@ async function generateTestsForFile(filePath) {
   const source = readFileSync(filePath, 'utf8');
 
   const prompt = [
-    'Generate Jest unit tests for the JavaScript file below.',
-    'Constraints:',
+    'Generate comprehensive Jest unit tests for the JavaScript file below.',
+    '',
+    'Requirements:',
     '- Return ONLY runnable JavaScript test code.',
     '- Use CommonJS (require/module.exports style).',
-    '- Do not include explanations.',
-    '- Mock external dependencies when needed.',
-    '- Focus on meaningful behavior and edge cases.',
+    '- Do NOT include explanations or comments outside test code.',
+    '- Mock external dependencies (fetch, DOM methods, external modules) appropriately.',
+    '- Test multiple scenarios: success paths, error cases, edge cases, boundary conditions.',
+    '',
+    'Testing Guidelines:',
+    '- For async functions: test both success and rejection cases.',
+    '- For functions that serialize data (JSON.stringify, etc): verify output format and types.',
+    '- For functions that make HTTP requests: verify headers, body format, method, and URL.',
+    '- For DOM functions: mock document and window methods; verify correct element selection and method calls.',
+    '- For data transformation: test with null, undefined, empty values, and type mismatches.',
+    '- Test error handling: verify that errors are thrown/caught appropriately.',
+    '- Use explicit assertions: check exact values, not just truthiness.',
+    '',
+    'Example pattern for HTTP functions:',
+    'test("should send properly formatted POST request", async () => {',
+    '  const mockFetch = jest.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("{}") });',
+    '  global.fetch = mockFetch;',
+    '  await myFunction({ key: "value" });',
+    '  expect(mockFetch).toHaveBeenCalledWith("url", expect.objectContaining({',
+    '    method: "POST",',
+    '    body: "{\\"key\\":\\"value\\"}"  // verify stringified format',
+    '  }));',
+    '});',
+    '',
+    'Example pattern for DOM functions:',
+    'test("should mount component to correct element", () => {',
+    '  document.body.innerHTML = "<div id=\\"root\\"></div>";',
+    '  myRender(<App />, document.getElementById("root"));',
+    '  expect(document.getElementById("root").innerHTML).toContain("expected content");',
+    '});',
+    '',
+    'Example pattern for error cases:',
+    'test("should throw on invalid input", () => {',
+    '  expect(() => myFunction(null)).toThrow();',
+    '  expect(() => myFunction(undefined)).toThrow();',
+    '});',
     '',
     `Source file path: ${filePath}`,
     '',
@@ -71,7 +114,7 @@ async function generateTestsForFile(filePath) {
       messages: [
         {
           role: 'system',
-          content: 'You are GitHub Copilot. Produce high-quality Jest tests with deterministic assertions.'
+          content: 'You are GitHub Copilot. Produce high-quality Jest tests with thorough, deterministic assertions. Include edge cases, error handling, data validation, and format verification. Focus on catching bugs in serialization, API calls, DOM manipulation, and boundary conditions.'
         },
         {
           role: 'user',
