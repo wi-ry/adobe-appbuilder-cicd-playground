@@ -52,6 +52,30 @@ function stripCodeFences(text) {
   return text.trim();
 }
 
+function validateTestCode(testCode, filePath) {
+  const forbiddenPatterns = [
+    /window\.location\s*=\s*\{/g,  // Direct assignment to window.location object
+    /global\.window\.location\s*=\s*\{/g,
+    /window\.location\.\w+\s*=\s*[^=]/g,  // Direct assignment to window.location properties like hostname
+    /global\.window\.location\.\w+\s*=\s*[^=]/g,
+  ];
+
+  const errors = [];
+
+  for (const pattern of forbiddenPatterns) {
+    const matches = testCode.match(pattern);
+    if (matches) {
+      errors.push(`Forbidden pattern found: ${pattern.source} (matches: ${matches.length})`);
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Generated test for ${filePath} contains problematic code:\n${errors.join('\n')}\n\nPlease review the generated test and fix the mocking approach.`);
+  }
+
+  // Additional checks can be added here, e.g., ensure Jest spies are used properly
+}
+
 async function generateTestsForFile(filePath) {
   const source = readFileSync(filePath, 'utf8');
 
@@ -72,6 +96,7 @@ async function generateTestsForFile(filePath) {
     '- For functions that serialize data (JSON.stringify, etc): verify output format and types.',
     '- For functions that make HTTP requests: verify headers, body format, method, and URL.',
     '- For DOM functions: mock document and window methods; verify correct element selection and method calls.',
+    '- For browser APIs like window.location in jsdom: Use Jest spies (e.g., jest.spyOn(window.location, \'hostname\', \'get\').mockReturnValue(\'value\')) instead of direct assignment to avoid navigation errors. Restore spies in afterEach.',
     '- For data transformation: test with null, undefined, empty values, and type mismatches.',
     '- Test error handling: verify that errors are thrown/caught appropriately.',
     '- Use explicit assertions: check exact values, not just truthiness.',
@@ -98,6 +123,15 @@ async function generateTestsForFile(filePath) {
     '  expect(document.getElementById("root").innerHTML).toContain("expected content");',
     '});',
     '',
+    'Example pattern for mocking window.location in jsdom:',
+    'let hostnameSpy;',
+    'beforeEach(() => {',
+    '  hostnameSpy = jest.spyOn(window.location, \'hostname\', \'get\').mockReturnValue(\'localhost\');',
+    '});',
+    'afterEach(() => {',
+    '  hostnameSpy.mockRestore();',
+    '});',
+    '',
     'Example pattern for error cases:',
     'test("should throw on invalid input", () => {',
     '  expect(() => myFunction(null)).toThrow();',
@@ -120,7 +154,7 @@ async function generateTestsForFile(filePath) {
       messages: [
         {
           role: 'system',
-          content: 'You are GitHub Copilot. Produce high-quality Jest tests with thorough, deterministic assertions. Include edge cases, error handling, data validation, and format verification. Focus on catching bugs in serialization, API calls, DOM manipulation, and boundary conditions. When the source uses ES6 "export default", require it as require(path).default. When it uses CommonJS "module.exports", require it directly.'
+          content: 'You are GitHub Copilot. Produce high-quality Jest tests with thorough, deterministic assertions. Include edge cases, error handling, data validation, and format verification. Focus on catching bugs in serialization, API calls, DOM manipulation, and boundary conditions. When the source uses ES6 "export default", require it as require(path).default. When it uses CommonJS "module.exports", require it directly. For browser APIs like window.location in jsdom, always use Jest spies (e.g., jest.spyOn(window.location, \'hostname\', \'get\').mockReturnValue(\'value\')) and restore them in afterEach to avoid navigation errors.'
         },
         {
           role: 'user',
@@ -169,6 +203,10 @@ async function main() {
 
   for (const filePath of changedFiles) {
     let testCode = await generateTestsForFile(filePath);
+
+    // Validate the generated test code for best practices
+    validateTestCode(testCode, filePath);
+
     // patch any require/import paths that point to the source file so they
     // are correct relative to the output directory (which is a hidden folder).
     // Copilot may produce paths like '../../src/...' depending on its view of
