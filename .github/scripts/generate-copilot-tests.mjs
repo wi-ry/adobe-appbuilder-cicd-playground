@@ -119,7 +119,25 @@ async function main() {
   const generated = [];
 
   for (const filePath of changedFiles) {
-    const testCode = await generateTestsForFile(filePath);
+    let testCode = await generateTestsForFile(filePath);
+    // patch any require/import paths that point to the source file so they
+    // are correct relative to the output directory (which is a hidden folder).
+    // Copilot may produce paths like '../../src/...' depending on its view of
+    // the repo; we compute the proper relative path from the generated test
+    // file location.
+    const sourceAbs = path.resolve(filePath);
+    const relFromOutput = path.relative(outputDir, sourceAbs).replace(/\\/g, '/');
+    // ensure it starts with './' or '../'
+    let relRequire = relFromOutput;
+    if (!relRequire.startsWith('.')) {
+      relRequire = './' + relRequire;
+    }
+    // replace occurrences of the original src path string with relRequire
+    testCode = testCode.replace(/(['"])(\.\.?\/)*src\/[\w\-\/\.]+?\.js\1/g, (match) => {
+      const quote = match[0];
+      return quote + relRequire + quote;
+    });
+
     const fileName = makeOutputName(filePath);
     const outputPath = path.join(outputDir, fileName);
 
