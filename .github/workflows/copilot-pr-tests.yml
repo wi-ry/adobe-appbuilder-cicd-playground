@@ -1,0 +1,105 @@
+name: Copilot PR Test Generator
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+jobs:
+  generate-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate tests with Copilot
+        env:
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_MODEL: ${{ vars.COPILOT_MODEL }}
+          COPILOT_API_URL: ${{ vars.COPILOT_API_URL }}
+        run: node .github/scripts/generate-copilot-tests.mjs
+
+      - name: Run unit tests including generated tests
+        id: jest
+        run: |
+          mkdir -p .copilot-generated-tests
+          set +e
+          npx jest --passWithNoTests src/dx-excshell-1/test .copilot-generated-tests --json --outputFile=.copilot-generated-tests/jest-results.json
+          exit_code=$?
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Build PR comment
+        if: always()
+        run: node .github/scripts/build-pr-comment.mjs
+
+      - name: Upload generated tests and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: copilot-generated-tests
+          path: .copilot-generated-tests
+          if-no-files-found: warn
+
+      - name: Comment on PR with results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- copilot-generated-tests-comment -->';
+            const body = fs.readFileSync('.copilot-generated-tests/pr-comment.md', 'utf8');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              per_page: 100
+            });
+
+            const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body
+              });
+            }
+
+      - name: Fail job if tests failed
+        if: steps.jest.outputs.exit_code != '0'
+        run: |
+          echo "Generated tests or project tests failed. See PR comment and artifact for details."
+          exit 1
