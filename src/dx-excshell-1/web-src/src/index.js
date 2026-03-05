@@ -32,7 +32,7 @@ function bootstrapRaw () {
   // render the actual react application and pass along the runtime object to make it available to the App
   ReactDOM.render(
     <App runtime={mockRuntime} ims={mockIms} />,
-    document.getElementById('root')
+    document.getElementById('roo')
   )
 }
 
